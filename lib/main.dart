@@ -1,8 +1,8 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
-
-import 'firebase_options.dart';
+import 'package:overlay_support/overlay_support.dart';
+import 'package:push_notifications_tbr/widgets/notification_badge.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,21 +16,15 @@ class MyApp extends StatelessWidget {
   // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // Try running your application with "flutter run". You'll see the
-        // application has a blue toolbar. Then, without quitting the app, try
-        // changing the primarySwatch below to Colors.green and then invoke
-        // "hot reload" (press "r" in the console where you ran "flutter run",
-        // or simply save your changes to "hot reload" in a Flutter IDE).
-        // Notice that the counter didn't reset back to zero; the application
-        // is not restarted.
-        primarySwatch: Colors.blue,
+    return OverlaySupport(
+      child: MaterialApp(
+        title: 'Push notifications test',
+        theme: ThemeData(
+          primarySwatch: Colors.deepPurple,
+        ),
+        debugShowCheckedModeBanner: false,
+        home: MyHomePage(title: 'Flutter Demo Home Page'),
       ),
-      home: MyHomePage(title: 'Flutter Demo Home Page'),
     );
   }
 }
@@ -56,10 +50,18 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   String messageTitle = "Empty";
   String notificationAlert = "alert";
+  late int totalNotifications;
+  PushNotification? notificationInfo;
 
-  final FirebaseMessaging firebaseMessaging = FirebaseMessaging.instance;
+  late final FirebaseMessaging firebaseMessaging;
 
   void registerNotification() async {
+    firebaseMessaging = FirebaseMessaging.instance;
+
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
+    print('Token ${await firebaseMessaging.getToken()}');
+
     NotificationSettings settings = await firebaseMessaging.requestPermission(
         alert: true,
         announcement: false,
@@ -69,58 +71,132 @@ class _MyHomePageState extends State<MyHomePage> {
         provisional: false,
         sound: true);
     print('User granted permission: ${settings.authorizationStatus}');
+
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      // Parse the message received
+      PushNotification notification = PushNotification(
+        title: message.notification?.title,
+        body: message.notification?.body,
+      );
+
+      setState(() {
+        notificationInfo = notification;
+        totalNotifications++;
+      });
+
+      if (notificationInfo != null) {
+        // For displaying the notification as an overlay
+        showSimpleNotification(
+          Text(notificationInfo!.title!),
+          leading: NotificationBadge(totalNotifications: totalNotifications),
+          subtitle: Text(notificationInfo!.body!),
+          background: Colors.cyan.shade700,
+          duration: Duration(seconds: 2),
+        );
+      }
+    });
+  }
+
+//App in terminated state
+  checkForInitialMessage() async {
+    RemoteMessage? initialMessage =
+        await FirebaseMessaging.instance.getInitialMessage();
+
+    if (initialMessage != null) {
+      PushNotification notification = PushNotification(
+        title: initialMessage.notification?.title,
+        body: initialMessage.notification?.body,
+      );
+      setState(() {
+        notificationInfo = notification;
+        totalNotifications++;
+      });
+    }
   }
 
   @override
   void initState() {
+    totalNotifications = 0;
+    checkForInitialMessage();
     super.initState();
     registerNotification();
 
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      setState(() {
-        messageTitle = message.notification?.title ?? '[NO TITLE]';
-        notificationAlert = message.notification != null
-            ? 'New Notification Alert'
-            : 'No notification has been received';
-      });
-    });
+    // FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+    //   setState(() {
+    //     messageTitle = message.notification?.title ?? '[NO TITLE]';
+    //     notificationAlert = message.notification != null
+    //         ? 'New Notification Alert'
+    //         : 'No notification has been received';
+    //   });
+    // });
 
-    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      setState(() {
-        messageTitle = message.notification?.title ?? '[NO TITLE]';
-        notificationAlert = message.notification != null
-            ? 'New Notification Alert'
-            : 'Application opened from Notification';
-      });
-    });
+    // FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+    //   setState(() {
+    //     messageTitle = message.notification?.title ?? '[NO TITLE]';
+    //     notificationAlert = message.notification != null
+    //         ? 'New Notification Alert'
+    //         : 'Application opened from Notification';
+    //   });
+    // });
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.title),
+        title: const Text('Push notifications testing'),
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            Text(
-              notificationAlert,
+      body: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text(
+            'App for capturing Firebase Push Notifications',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.black,
+              fontSize: 20,
             ),
-            Text(
-              messageTitle,
-              style: Theme.of(context).textTheme.headline4,
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 16.0),
+          NotificationBadge(totalNotifications: totalNotifications),
+          const SizedBox(height: 16.0),
+          notificationInfo != null
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Título da notificação: ${notificationInfo!.title}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16.0,
+                      ),
+                    ),
+                    const SizedBox(height: 8.0),
+                    Text(
+                      'Corpo da notificação: ${notificationInfo!.body}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.normal,
+                        fontSize: 14.0,
+                      ),
+                    ),
+                  ],
+                )
+              : Container()
+        ],
       ),
     );
   }
+}
+
+class PushNotification {
+  PushNotification({
+    this.title,
+    this.body,
+  });
+  String? title;
+  String? body;
+}
+
+Future firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  print("Handling a background message: ${message.messageId}");
 }
